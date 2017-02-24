@@ -1,5 +1,6 @@
 from threading import Thread
- 
+import operator
+
 class Cache(object):
     
     def __init__(self, id, capacity):
@@ -13,12 +14,15 @@ class Cache(object):
         for v in self.videos.values():
             size += v.size
         return size
+
+    def points(self):
+        return (self.capacity - self.usedSize())
         
     def enoughSpace(self, size):
         return (self.capacity - self.usedSize()) >= size
     
-    def getVideo(self, id):
-        return self.videos[id]        
+    def hasKey(self, id):
+        return self.videos.has_key(id)      
     
     def addVideo(self, video):
         self.videos[video.id]= video
@@ -55,22 +59,52 @@ class Network(object):
         self.readFile(file)
         
     def calculate(self):
-        for endpoint in self.endpoints.values():
-            for videoId, request in endpoint.requests.iteritems():
-                video = self.videos[videoId]
-                maxPoints = 0.0
-                bestCache = None
+        class Node(object):
+            def __init__(self, videoId, endpointId, nRequests, datacenterLatency, cacheLatencies):
+                self.videoId = videoId
+                self.endpointId = endpointId
+                self.cacheLatencies = cacheLatencies
+                self.datacenterLatency = datacenterLatency
+                self.nRequests = nRequests
+        # for endpoint in self.endpoints.values():
+        #     for videoId, request in endpoint.requests.iteritems():
+        #         video = self.videos[videoId]
+        #         maxPoints = 0.0
+        #         bestCache = None
                 
-                for cacheId, latency in endpoint.cacheLatencies.iteritems():
-                    points = float(request/latency)
-                    
-                    if (points > maxPoints):
-                        maxPoints = points
-                        bestCache = self.caches[cacheId]
+        #         for cacheId, latency in endpoint.cacheLatencies.iteritems():
+        #             cache = self.caches[cacheId]
+        #             points = float(request/latency) #+ cache.points()
+        #             if (points > maxPoints):
+        #                 maxPoints = points
+        #                 bestCache = cache
 
-                
-                if(bestCache and bestCache.enoughSpace(video.size)):
-                    bestCache.addVideo(video)
+        #         if(bestCache and bestCache.enoughSpace(video.size)):
+        #             bestCache.addVideo(video)
+        nodes = []
+
+        for endpoint in self.endpoints.values(): 
+            for videoId, nRequest in endpoint.requests.iteritems():
+                if (len(endpoint.cacheLatencies.keys())!=0):
+                    nodes.append(Node(videoId, endpoint.id, nRequest, endpoint.datacenterLatency, endpoint.cacheLatencies))
+
+        nodes = sorted(nodes, key=lambda x: x.nRequests, reverse=True)
+        
+        for n in nodes:
+            video = self.videos[videoId]
+            
+            bestCaches = sorted(n.cacheLatencies.items(), key=operator.itemgetter(1))
+            bestCache = self.caches[bestCaches[0][0]]
+
+            if(bestCache.enoughSpace(video.size)):
+                bestCache.addVideo(video)
+            else:
+                bestCaches.pop(0)
+                for tupla in bestCaches:
+                    bestCache = self.caches[tupla[0]]
+                    if(bestCache.enoughSpace(video.size)):
+                        bestCache.addVideo(video)
+                        break
 
     def sendToFile(self, fileName):
         lines=[]
